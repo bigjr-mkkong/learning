@@ -1,9 +1,17 @@
+//#define TEST_FREELESS_ENABLE             PASSED
+#define TEST_ALWAYS_FREE_ENABLE
+
+/*
+ * TEST_FREELESS_ENABLE and TEST_ALWAYS_FREE_ENABLE are mutual exclusive test,
+ * make sure only one of them are enabled
+ */
 #include <pthread.h>
 #include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
+#include <limits.h>
 
 #define TOTAL_MEMORY_SIZE (1 * 1024 ) // 1 MB
 #define SLICE_SIZE 1 // 1 KB
@@ -345,7 +353,13 @@ void *producer(void *arg)
         }*/
         sem_wait(&not_full); 
         sem_wait(&mutex);
+#if defined( TEST_FREELESS_ENABLE )
+        MemoryRequest *request=createRequest(idCount, 128, INT_MAX);
+#elif defined( TEST_ALWAYS_FREE_ENABLE )
+        MemoryRequest *request=createRequest(idCount, 128, 1);
+#else
         MemoryRequest *request=createRequest(idCount, (rand() % (50 - 2 + 1)) + 2, rand() % MAX_TIME_SLICE + 1);
+#endif
         idCount++;
         enqueueRequest(request);
         printf("Producer ID: %zu,Request ID: %d, Size: %d KB, Time Slice: %d, Allocation Time: %d\n",
@@ -358,13 +372,13 @@ void *producer(void *arg)
 void *consumer(void *arg)
 {
    while(flag){
-    
-        int not_empty_value;
-        sem_getvalue(&not_empty, &not_empty_value);
-        if(not_empty_value == 0){
-            flag=false;
-            break;
-        }
+
+    int not_empty_value;
+    sem_getvalue(&not_empty, &not_empty_value);
+    if(not_empty_value == 0){
+        flag=false;
+        break;
+    }
     sem_wait(&not_empty);
     sem_wait(&mutex);
     MemoryRequest *request=dequeueRequest();
@@ -381,6 +395,7 @@ void *consumer(void *arg)
  
         enqueueRequest(request);
     }
+#ifndef TEST_FREELESS_ENABLE
     if (currentTime % DEALLOCATE_INTERVAL == 0) {
             Node *current = memoryHead;
             while (current != NULL) {
@@ -392,6 +407,7 @@ void *consumer(void *arg)
             printf("Consumer ID: %zu, Deallocated Memory at Time: %d\n",pthread_self(),currentTime);
   
     }
+#endif
     sem_post(&not_full);
     sem_post(&mutex);
     
@@ -404,6 +420,7 @@ void *compactMemoryThread(void *arg)
         if(currentTime%DEALLOCATE_INTERVAL==0){
         sem_wait(&mutex);
         compactMemory();
+        printf("**Memory Compacting**\n");
         sem_post(&mutex);
         }
     }
