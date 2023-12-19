@@ -340,9 +340,9 @@ void processRequests() {
 void *producer(void *arg)
 {
     for(int i=0;i<(rand()%10000+1);i++){
-        if(sem_getvalue(&not_full,&requestSpace)==0 && requestSpace==0){
+        /*if(sem_getvalue(&not_full,&requestSpace)==0 && requestSpace==0){
             break;
-        }
+        }*/
         sem_wait(&not_full); 
         sem_wait(&mutex);
         MemoryRequest *request=createRequest(idCount, (rand() % (50 - 2 + 1)) + 2, rand() % MAX_TIME_SLICE + 1);
@@ -357,7 +357,8 @@ void *producer(void *arg)
 }
 void *consumer(void *arg)
 {
-    while(flag){
+   while(flag){
+    
         int not_empty_value;
         sem_getvalue(&not_empty, &not_empty_value);
         if(not_empty_value == 0){
@@ -389,7 +390,7 @@ void *consumer(void *arg)
                 current = current->next;
             }
             printf("Consumer ID: %zu, Deallocated Memory at Time: %d\n",pthread_self(),currentTime);
-            printf("\n--- After Compaction at Time: %d ---\n", currentTime);
+  
     }
     sem_post(&not_full);
     sem_post(&mutex);
@@ -397,15 +398,26 @@ void *consumer(void *arg)
     }
 
 }
+void *compactMemoryThread(void *arg)
+{
+    while(flag){
+        if(currentTime%DEALLOCATE_INTERVAL==0){
+        sem_wait(&mutex);
+        compactMemory();
+        sem_post(&mutex);
+        }
+    }
+}
 void simulateTimeProgressionWithThreads(){
         sem_init(&mutex,0,1);
         sem_init(&not_full,0,requestSpace);
         sem_init(&not_empty,0,0);
 
-        while(flag){
             //currentTime++;
             pthread_t producerThreads[NUM_PRODUCERS];
             pthread_t consumerThreads[NUM_CONSUMERS];
+            pthread_t compactMemoryT;
+            pthread_create(&compactMemoryT, NULL,compactMemoryThread, NULL);
             for(int i=0;i<NUM_PRODUCERS;i++){
                 pthread_create(&producerThreads[i],NULL,producer,NULL);
             }
@@ -420,7 +432,7 @@ void simulateTimeProgressionWithThreads(){
             for(int i=0;i<NUM_CONSUMERS;i++){
                 pthread_join(consumerThreads[i],NULL);
             }
-        }
+        
         printf("No pending requests and no allocations. Stopping simulation.\n");
         sem_destroy(&mutex);
         sem_destroy(&not_empty);
